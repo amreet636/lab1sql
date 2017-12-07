@@ -74,6 +74,12 @@ ALTER TABLE [Sessions] ADD CONSTRAINT FK_Sessions_BikeID FOREIGN KEY (BikeID)
 						 REFERENCES Bikes(BikeID) ON DELETE NO ACTION
 GO
 
+-- Poopulate Class
+INSERT INTO aaulakh2_Lab1.dbo.Class(ClassID, ClassDescription)
+	values ('moto_3', 'Default Chassis, 250cc'),
+		   ('moto_2', 'Default 600cc, Custom Chassis'),
+		   ('motogp', '1000cc Factory Spec')
+GO
 -- Procedures
 
 --PopulateBikes
@@ -131,7 +137,7 @@ GO
 
 create procedure AddRider
 @Name as nvarchar(50),
-@ClassID as nvarcahr(50),
+@ClassID as nvarchar(50),
 @ErrorMessage as varchar(50) output
 as
 	if (@Name is null or @Name like '')
@@ -152,6 +158,7 @@ as
 	return 0
 GO
 
+
 -- Remove Rider Stored Procedure
 if exists
 (
@@ -163,12 +170,15 @@ if exists
 	drop procedure RemoveRider
 GO
 
+-- Add Rider Test End
+
+-- Remove Rider Stored Procedure
 create procedure RemoveRider
 	@RiderID as int,
 	@Force as bit = 0,
 	@ErrorMessage as nvarchar(max) output
 as
-	if @RiderID is null
+	if (@RiderID is null)
 	begin
 		set @ErrorMessage = 'Remove Rider: Rider ID is null'
 		return -1
@@ -176,7 +186,7 @@ as
 
 	if not exists (select * from Riders where RiderID = @RiderID)
 	begin
-		set @ErrorMessage = 'Remove Rider: ' + @RiderID + ' does not exist'
+		set @ErrorMessage = 'Remove Rider: ' + Cast(@RiderID as nvarchar) + ' does not exist'
 	end
 
 	if (@Force = 1)
@@ -207,6 +217,9 @@ as
 	set @ErrorMessage = 'OK'
 	return 0
 GO
+
+
+
 
 -- Add Session Stored Procedure
 if exists
@@ -239,7 +252,7 @@ as
 
 	if not exists (select * from Riders where RiderID = @RiderID)
 	begin
-		set @ErrorMessage = 'Add Session: ' + @RiderID + ' does not exist'
+		set @ErrorMessage = 'Add Session: ' + cast(@RiderID as nvarchar) + ' does not exist'
 		return -1
 	end
 
@@ -257,13 +270,13 @@ as
 
 	if ISDATE(@SessionDate) = 0 or @SessionDate < getdate()
 	begin
-		set @ErrorMessage = 'Add Session: ' + @SessionDate + ' is invalid'
+		set @ErrorMessage = 'Add Session: ' + cast(@SessionDate as nvarchar) + ' is invalid'
 		return -1
 	end
 
 	if exists (select * from Sessions where BikeID like @BikeID and SessionDate = @SessionDate)
 	begin
-		set @ErrorMessage = 'Add Session: ' + @SBikeID + ' is already assigned'
+		set @ErrorMessage = 'Add Session: ' + @BikeID + ' is already assigned'
 		return -1
 	end
 
@@ -333,7 +346,7 @@ as
 		return -1
 	end
 
-	if not exists (select * from Sessions where SessionDate = @@SessionDate)
+	if not exists (select * from Sessions where SessionDate = @SessionDate)
 	begin
 		set @ErrorMessage = 'Update Session: ' + @SessionDate + ' does not exist'
 		return -1
@@ -432,17 +445,25 @@ as
 
 	if @RiderID is null
 	begin
-		select *
-		from Class as C left outer join Riders as R
-			on C.RiderID = R.RiderID
-		where C.ClassID like @ClassID
+		select 
+			C.ClassDescription as 'Class Description',
+			R.Name
+			from Class as C left outer join Riders as R
+			on C.ClassID = R.ClassID
+		where R.ClassID like (select 
+									ClassID 
+							  from Class 
+							  where ClassID like @ClassID)
 		set @ErrorMessage = 'Class Info: @RiderID is null'
 		return 0
 	end
 
-	if @Rider is not null
+	if @RiderID is not null
 	begin
-		if not exists (select RiderID from Class where RiderID = @RiderID)
+		if not exists (select RiderID from Riders where ClassID like (select 
+																			ClassID 
+																	  from Class 
+																	  where ClassID like @ClassID))
 		begin
 			set @ErrorMessage = 'Class Info: ' + @RiderID + ' does not exist'
 			return -1
@@ -450,11 +471,12 @@ as
 
 		else
 		begin
-			select *
-		from Class as C left outer join Riders as r
-			on c.RiderID = r.RiderID
+			select C.ClassDescription as 'Class Description',
+				   R.Name
+		from Class as C left outer join Riders as R
+			on C.ClassID like R.ClassID
 		where
-			c.ClassID like @ClassID and c.RiderID = @RiderID
+			C.ClassID like @ClassID and R.RiderID = @RiderID
 		set @ErrorMessage = 'OK'
 		return 0
 		end
@@ -477,10 +499,10 @@ as
 
 	if @ClassID is null or @ClassID like ''
 	begin
-		set @ErrorMessage = 'Class Summary: Class ID is Null or mpty'
+		set @ErrorMessage = 'Class Summary: Class ID is Null or empty'
 		return -1
 	end
-	--ClassID has to exist
+
 	if not exists(select ClassID from Class where ClassID like @ClassID)
 	begin
 		set @ErrorMessage = 'Class Summary: '+ @ClassID + 'does not exist'
@@ -493,10 +515,186 @@ as
 		return -1
 	end
 
-	if  not exists( select RiderID from Class where RiderID = @RiderID)
+	if  not exists( select RiderID from Riders where RiderID = @RiderID)
 	begin
 		set @ErrorMessage = 'Class Summary: '+ @ClassID + 'does not exist'
 		return -1
 	end
-	
+
+
+	--if  not exists ( select RiderID from Riders where RiderID = @RiderID and ClassID like @RiderID)
+		
+
+
 go
+
+
+-- Add Rider Test
+-- null test
+declare @pName as nvarchar(50)
+declare @pClassID as nvarchar(50)
+declare @errMsg as nvarchar(max)
+declare @retVal as int = 0
+set @pName = null
+set @pClassID = 'moto_3'
+set @errMsg = ''
+exec @retVal = AddRider @Name= @pName, @ClassID = @pClassID, @ErrorMessage = @errMsg output
+if @retVal >= 0 print 'Error Code Invalid'
+select @errMsg as 'Add Rider Error Message', @retVal as 'Return Code'
+go
+-- Class Exists test
+declare @pName as nvarchar(50)
+declare @pClassID as nvarchar(50)
+declare @errMsg as nvarchar(max)
+declare @retVal as int = 0
+set @pName = 'Mario Lopez'
+set @pClassID = 'moto_73'
+set @errMsg = ''
+exec @retVal = AddRider @Name= @pName, @ClassID = @pClassID, @ErrorMessage = @errMsg output
+if @retVal >= 0 print 'Error Code Invalid'
+select @errMsg as 'Add Rider Error Message', @retVal as 'Return Code'
+go
+
+-- Add Rider Sucessful Run
+declare @pName as nvarchar(50)
+declare @pClassID as nvarchar(50)
+declare @errMsg as nvarchar(max)
+declare @retVal as int = 0
+set @pName = 'Mario Lopez'
+set @pClassID = 'moto_3'
+set @errMsg = ''
+exec @retVal = AddRider @Name= @pName, @ClassID = @pClassID, @ErrorMessage = @errMsg output
+if @retVal >= 0 print 'Error Code Invalid'
+select @errMsg as 'Add Rider Error Message', @retVal as 'Return Code'
+select RiderID, Name from Riders where ClassID = @pClassID
+GO
+
+-- Add Session Test Code
+-- RiderID Null
+declare @pRiderID as int = null
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+--BikeID Null
+declare @pRiderID as int = 10
+declare @pBikeID as nvarchar(6) = null
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+--RiderID !Exists
+declare @pRiderID as int = 11
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+--BikeID !Exists
+declare @pRiderID as int = 10
+declare @pBikeID as nvarchar(6) = '000H-C'
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+--Date Null
+declare @pRiderID as int = 10
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = null
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+-- Date Invalid
+declare @pRiderID as int = null
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = '2017-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+-- Succesful Add Session Run
+declare @pRiderID as int = 10
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+-- BikeID already assigned
+declare @pRiderID as int = 10
+declare @pBikeID as nvarchar(6) = '000H-A'
+declare @pSessionDate as datetime = '2018-09-01'
+declare @Error as nvarchar(max)
+declare @retVal as int = 0
+exec @retVal = AddSession @RiderID = @pRiderID, @BikeID = @pBikeID, @SessionDate = @pSessionDate, @ErrorMessage = @Error output
+select @Error as 'Add Session Error Message', @retVal as 'Return Code'
+GO
+
+-- Remove Rider Test Code
+-- RiderID Null
+declare @retVal as int = 0
+declare @pRiderID as int = null
+declare @pForce as bit = 0
+declare @Error as nvarchar(max) = ''
+exec @retVal = RemoveRider @RiderID = pRiderID, @Force = @pForce, @ErrorMessage = @Error output
+select @Error as 'Remove Rider Error Message', @retVal as 'Return Code'
+GO
+
+----RiderID !Exist
+--declare @retVal as int = 0
+--declare @pRiderID as int = 11
+--declare @pForce as bit = 1
+--declare @Error as nvarchar(max) = ''
+--exec @retVal = RemoveRider @RiderID = pRiderID, @Force = @pForce, @ErrorMessage = @Error output
+--select @Error as 'Remove Rider Error Message', @retVal as 'Return Code'
+--GO
+
+---- !Force & SessionData
+--declare @retVal as int = 0
+--declare @pRiderID as int = 10
+--declare @pForce as bit = 0
+--declare @Error as nvarchar(max) = ''
+--exec @retVal = RemoveRider @RiderID = pRiderID, @Force = @pForce, @ErrorMessage = @Error output
+--select @Error as 'Remove Rider Error Message', @retVal as 'Return Code'
+--GO
+
+---- Force & SessionData
+--declare @retVal as int = 0
+--declare @pRiderID as int = 10
+--declare @pForce as bit = 1
+--declare @Error as nvarchar(max) = ''
+--exec @retVal = RemoveRider @RiderID = pRiderID, @Force = @pForce, @ErrorMessage = @Error output
+--select @Error as 'Remove Rider Error Message', @retVal as 'Return Code'
+--GO
+
+---- Remove Rider Sucessful Run
+--declare @retVal as int = 0
+--declare @pRiderID as int = 10
+--declare @pForce as bit = 1
+--declare @Error as nvarchar(max) = ''
+--exec @retVal = RemoveRider @RiderID = pRiderID, @Force = @pForce, @ErrorMessage = @Error output
+--select @Error as 'Remove Rider Error Message', @retVal as 'Return Code'
+--GO
+
+
+
